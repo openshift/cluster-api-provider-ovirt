@@ -151,7 +151,8 @@ func (actuator *OvirtActuator) Exists(_ context.Context, machine *machinev1.Mach
 	}
 	vm, err := machineService.GetVm(*machine)
 	if err != nil {
-		return false, err
+		klog.Warningf("oVirt VM %s does not exist", machine.Name)
+		return false, nil
 	}
 	return vm != nil, err
 }

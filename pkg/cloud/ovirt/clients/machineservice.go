@@ -256,7 +256,6 @@ func (is *InstanceService) GetVm(machine machinev1.Machine) (instance *Instance,
 	}
 	instance, err = is.GetVmByName()
 	return instance, err
-
 }
 
 func (is *InstanceService) GetVmByID(resourceId string) (instance *Instance, err error) {
