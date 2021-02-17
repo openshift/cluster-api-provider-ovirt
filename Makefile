@@ -107,13 +107,13 @@ shell:
 generate:
 	go generate ./pkg/... ./cmd/...
 
-DOCKERFILE=Dockerfile
+CONTAINERFILE=Containerfile
 images:
 	podman build \
 		-t $(REGISTRY)/origin-ovirt-machine-controllers:$(VERSION_RELEASE) \
 		--build-arg version=$(VERSION) \
 		--build-arg release=$(RELEASE) \
-		-f $(DOCKERFILE) \
+		-f $(CONTAINERFILE) \
 		$(DIR)
 
 ovirt-cluster-api-controller: manager
