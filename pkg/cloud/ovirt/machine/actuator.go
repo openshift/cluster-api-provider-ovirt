@@ -29,8 +29,8 @@ import (
 	"github.com/openshift/cluster-api-provider-ovirt/pkg/cloud/ovirt/clients"
 	ovirtsdk "github.com/ovirt/go-ovirt"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -50,8 +50,6 @@ type OvirtActuator struct {
 	ovirtApi       *ovirtsdk.Connection
 	OSClient       osclientset.Interface
 }
-
-
 
 func NewActuator(params ovirt.ActuatorParams) (*OvirtActuator, error) {
 	config := ctrl.GetConfigOrDie()
@@ -140,7 +138,7 @@ func (actuator *OvirtActuator) Create(ctx context.Context, machine *machinev1.Ma
 	}
 
 	actuator.EventRecorder.Eventf(machine, corev1.EventTypeNormal, "Created", "Updated Machine %v", machine.Name)
-	return actuator.patchMachine(ctx,machine, instance, conditionSuccess())
+	return actuator.patchMachine(ctx, machine, instance, conditionSuccess())
 }
 
 func (actuator *OvirtActuator) Exists(_ context.Context, machine *machinev1.Machine) (bool, error) {
@@ -199,7 +197,7 @@ func (actuator *OvirtActuator) Update(ctx context.Context, machine *machinev1.Ma
 				"Cannot find a VM by id: %v", err))
 		}
 	}
-	return actuator.patchMachine(ctx,machine, vm, conditionSuccess())
+	return actuator.patchMachine(ctx, machine, vm, conditionSuccess())
 }
 
 func (actuator *OvirtActuator) Delete(_ context.Context, machine *machinev1.Machine) error {
@@ -255,11 +253,11 @@ func (actuator *OvirtActuator) handleMachineError(machine *machinev1.Machine, er
 	return err
 }
 
-func (actuator *OvirtActuator) patchMachine(ctx context.Context,machine *machinev1.Machine, instance *clients.Instance, condition ovirtconfigv1.OvirtMachineProviderCondition) error {
+func (actuator *OvirtActuator) patchMachine(ctx context.Context, machine *machinev1.Machine, instance *clients.Instance, condition ovirtconfigv1.OvirtMachineProviderCondition) error {
 	actuator.reconcileProviderID(machine, instance)
 	klog.V(5).Infof("Machine %s provider status %s", instance.MustName(), instance.MustStatus())
 
-	err := actuator.reconcileNetwork(ctx,machine, instance)
+	err := actuator.reconcileNetwork(ctx, machine, instance)
 	if err != nil {
 		return err
 	}
@@ -289,21 +287,21 @@ func (actuator *OvirtActuator) patchMachine(ctx context.Context,machine *machine
 	return nil
 }
 
-func (actuator *OvirtActuator) getClusterAddress(ctx context.Context) (map[string]int,error){
-		infra,err := actuator.OSClient.ConfigV1().Infrastructures().Get(ctx,"cluster",metav1.GetOptions{})
-		if err != nil {
-			klog.Error(err, "Failed to retrieve Cluster details")
-			return nil,err
-		}
-
-		var clusterAddr = make(map[string]int)
-		clusterAddr[ infra.Status.PlatformStatus.Ovirt.APIServerInternalIP ] = 1
-		clusterAddr[ infra.Status.PlatformStatus.Ovirt.IngressIP ] = 1
-
-		return clusterAddr,nil
+func (actuator *OvirtActuator) getClusterAddress(ctx context.Context) (map[string]int, error) {
+	infra, err := actuator.OSClient.ConfigV1().Infrastructures().Get(ctx, "cluster", metav1.GetOptions{})
+	if err != nil {
+		klog.Error(err, "Failed to retrieve Cluster details")
+		return nil, err
 	}
 
-func (actuator *OvirtActuator) reconcileNetwork(ctx context.Context,machine *machinev1.Machine, instance *clients.Instance) error {
+	var clusterAddr = make(map[string]int)
+	clusterAddr[infra.Status.PlatformStatus.Ovirt.APIServerInternalIP] = 1
+	clusterAddr[infra.Status.PlatformStatus.Ovirt.IngressIP] = 1
+
+	return clusterAddr, nil
+}
+
+func (actuator *OvirtActuator) reconcileNetwork(ctx context.Context, machine *machinev1.Machine, instance *clients.Instance) error {
 	switch instance.MustStatus() {
 	// expect IP addresses only on those statuses.
 	// in those statuses we 'll try reconciling
@@ -335,7 +333,7 @@ func (actuator *OvirtActuator) reconcileNetwork(ctx context.Context,machine *mac
 		return err
 	}
 
-	ip, err := machineService.FindVirtualMachineIP(vmId,excludeAddr)
+	ip, err := machineService.FindVirtualMachineIP(vmId, excludeAddr)
 
 	if err != nil {
 		// stop reconciliation till we get IP addresses - otherwise the state will be considered stable.
@@ -438,6 +436,9 @@ func (actuator *OvirtActuator) validateMachine(machine *machinev1.Machine, confi
 	if config.OSDisk == nil {
 		return apierrors.InvalidMachineConfiguration(
 			fmt.Sprintf("%s OS Disk (os_disk) must be specified!", ErrorInvalidMachineObject))
+	} else if config.OSDisk.SizeGB == 0 {
+		return apierrors.InvalidMachineConfiguration(
+			fmt.Sprintf("%s OS Disk (os_disk) *SizeGB* must be specified!", ErrorInvalidMachineObject))
 	}
 
 	err = validateVirtualMachineType(config.VMType)
@@ -508,8 +509,8 @@ func validateHugepages(value int32) error {
 		return nil
 	default:
 		return fmt.Errorf(
-			"error creating oVirt instance: The machine `hugepages` custom property must " +
-				"be one of the following options: 2048, 1048576. " +
+			"error creating oVirt instance: The machine `hugepages` custom property must "+
+				"be one of the following options: 2048, 1048576. "+
 				"The value: %d is not valid", value)
 	}
 	return nil
@@ -549,7 +550,7 @@ func (actuator *OvirtActuator) autoPinningSupported(machine *machinev1.Machine, 
 	if versionCompareResult >= 0 {
 		return nil
 	}
-	return fmt.Errorf("the engine version %d.%d.%d is not supporting the auto pinning feature. " +
+	return fmt.Errorf("the engine version %d.%d.%d is not supporting the auto pinning feature. "+
 		"Please update to 4.4.5 or later", engineVer.MustMajor(), engineVer.MustMinor(), engineVer.MustBuild())
 }
 
