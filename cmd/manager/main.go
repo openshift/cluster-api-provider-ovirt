@@ -22,19 +22,14 @@ import (
 	"os"
 	"time"
 
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/klog"
-
+	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/cluster-api-provider-ovirt/pkg/actuators/machine"
 	"github.com/openshift/cluster-api-provider-ovirt/pkg/apis"
-	"github.com/openshift/cluster-api-provider-ovirt/pkg/cloud/ovirt"
-	"github.com/openshift/cluster-api-provider-ovirt/pkg/cloud/ovirt/controllers/nodeController"
-	"github.com/openshift/cluster-api-provider-ovirt/pkg/cloud/ovirt/controllers/providerIDcontroller"
-	"github.com/openshift/cluster-api-provider-ovirt/pkg/cloud/ovirt/machine"
-
+	"github.com/openshift/cluster-api-provider-ovirt/pkg/controllers/nodeController"
+	"github.com/openshift/cluster-api-provider-ovirt/pkg/controllers/providerIDcontroller"
 	machinev1 "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
 	capimachine "github.com/openshift/machine-api-operator/pkg/controller/machine"
-	clientset "github.com/openshift/machine-api-operator/pkg/generated/clientset/versioned"
-
+	"k8s.io/klog"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	logz "sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -123,17 +118,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	kubeClient, err := kubernetes.NewForConfig(mgr.GetConfig())
-	if err != nil {
-		entryLog.Error(err, "Failed to create kubernetes client from configuration")
-	}
-
-	cs, err := clientset.NewForConfig(cfg)
-	if err != nil {
-		klog.Fatalf("Failed to create client from configuration: %v", err)
-	}
-
 	if err := apis.AddToScheme(mgr.GetScheme()); err != nil {
+		panic(err)
+	}
+
+	if err := configv1.Install(mgr.GetScheme()); err != nil {
 		panic(err)
 	}
 
@@ -141,22 +130,17 @@ func main() {
 		panic(err)
 	}
 
-	machineActuator, err := machine.NewActuator(ovirt.ActuatorParams{
-		Namespace:      *watchNamespace,
-		Client:         mgr.GetClient(),
-		Scheme:         mgr.GetScheme(),
-		MachinesClient: cs.MachineV1beta1(),
-		KubeClient:     kubeClient,
-		EventRecorder:  mgr.GetEventRecorderFor("ovirtprovider"),
+	machineActuator := machine.NewActuator(machine.ActuatorParams{
+		Namespace:     *watchNamespace,
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		EventRecorder: mgr.GetEventRecorderFor("ovirtprovider"),
 	})
-	if err != nil {
-		panic(err)
-	}
 
 	capimachine.AddWithActuator(mgr, machineActuator)
 
-	providerIDcontroller.Add(mgr, manager.Options{})
-	nodeController.Add(mgr, manager.Options{})
+	providerIDcontroller.Add(mgr)
+	nodeController.Add(mgr)
 
 	if err := mgr.AddReadyzCheck("ping", healthz.Ping); err != nil {
 		klog.Fatal(err)

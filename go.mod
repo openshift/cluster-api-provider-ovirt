@@ -4,10 +4,14 @@ go 1.16
 
 require (
 	github.com/go-logr/logr v0.4.0
-	github.com/openshift/client-go v0.0.0-20210409155308-a8e62c60e930
+	github.com/golang/mock v1.5.0
+	github.com/onsi/gomega v1.10.5
+	github.com/openshift/api v0.0.0-20210416115537-a60c0dc032fd
 	github.com/openshift/machine-api-operator v0.2.1-0.20210505133115-b7ef098180db
 	github.com/ovirt/go-ovirt v0.0.0-20210308100159-ac0bcbc88d7c
 	github.com/pkg/errors v0.9.1
+	golang.org/x/sys v0.0.0-20210603125802-9665404d3644 // indirect
+	golang.org/x/tools v0.1.2 // indirect
 	k8s.io/api v0.21.0
 	k8s.io/apimachinery v0.21.0
 	k8s.io/client-go v0.21.0
