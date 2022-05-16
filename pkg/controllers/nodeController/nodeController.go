@@ -73,6 +73,28 @@ func (r *nodeController) Reconcile(ctx context.Context, request reconcile.Reques
 		r.Log.Info("Node VM status is Down, requeuing for 1 min",
 			"Node", node.Name, "Vm Status", ovirtC.VMStatusDown)
 		return common.ResultRequeueAfter(retryIntervalVMDownSec), nil
+	} else {
+		hostID := vm.HostID()
+		zoneLabel, ok := node.Labels["topology.kubernetes.io/zone"]
+		needsUpdate := false
+		if hostID != nil {
+			if !ok || zoneLabel != *hostID {
+				// Set host ID
+				node.Labels["topology.kubernetes.io/zone"] = *hostID
+				needsUpdate = true
+			}
+		} else {
+			if ok {
+				delete(node.Labels, "topology.kubernetes.io/zone")
+				needsUpdate = true
+			}
+		}
+		if needsUpdate {
+			if err := r.Client.Update(ctx, &node); err != nil {
+				return common.ResultRequeueDefault(),
+					fmt.Errorf("failed updating node %s object in OpenShift, requeue: %w", node.Name, err)
+			}
+		}
 	}
 	return common.ResultNoRequeue(), nil
 }
