@@ -1,11 +1,12 @@
 //go:build unit
 
-package ovirt
+package ovirt_test
 
 import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/openshift/cluster-api-provider-ovirt/pkg/ovirt"
 	apicorev1 "k8s.io/api/core/v1"
 )
 
@@ -14,7 +15,7 @@ func TestFromK8sSecret(t *testing.T) {
 		name          string
 		description   string
 		inputSecret   *apicorev1.Secret
-		expectedCreds *Credentials
+		expectedCreds *ovirt.Credentials
 		expectedError bool
 	}
 
@@ -32,7 +33,7 @@ func TestFromK8sSecret(t *testing.T) {
 					"ovirt_insecure":  []byte("false"),
 				},
 			},
-			expectedCreds: &Credentials{
+			expectedCreds: &ovirt.Credentials{
 				URL:      "https://ovirt-engine.test.com/api",
 				Username: "user",
 				Password: "topsecret",
@@ -61,7 +62,7 @@ func TestFromK8sSecret(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			creds, err := FromK8sSecret(tc.inputSecret)
+			creds, err := ovirt.FromK8sSecret(tc.inputSecret)
 			if tc.expectedError && err == nil {
 				t.Fatal("expected error, but got <nil>")
 			}

@@ -121,18 +121,26 @@ func TestValidateMachine(t *testing.T) {
 			expectIsValid: false,
 		},
 		{
-			name: "validation of machine provider spec with Guaranteeed memory bigger than MemoryMB fails",
+			name: "validation of machine provider spec with Guaranteed memory bigger than MemoryMB fails",
 			spec: BasicValidSpec(func(omps *v1beta1.OvirtMachineProviderSpec) *v1beta1.OvirtMachineProviderSpec {
 				omps.GuaranteedMemoryMB = 24000
 				return omps
 			}),
 			expectIsValid: false,
 		},
+		{
+			name: "validation of machine provider spec with Auto Pinning Policy",
+			spec: BasicValidSpec(func(omps *v1beta1.OvirtMachineProviderSpec) *v1beta1.OvirtMachineProviderSpec {
+				omps.AutoPinningPolicy = "resize_and_pin"
+				return omps
+			}),
+			expectIsValid: true,
+		},
 	}
 	for _, testcase := range testCases {
 		t.Run(testcase.name, func(t *testing.T) {
 			validationError := validateMachine(helper.GetClient(), testcase.spec)
-			if validationError != nil == testcase.expectIsValid {
+			if (validationError != nil) == testcase.expectIsValid {
 				t.Errorf("expected spec to be valid(%t), but got error '%v'", testcase.expectIsValid, validationError)
 			}
 		})
