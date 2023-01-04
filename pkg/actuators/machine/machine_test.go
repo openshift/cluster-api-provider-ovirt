@@ -60,10 +60,13 @@ func TestMachineScope_BuildOptionalVMParameter(t *testing.T) {
 		verify func(t *testing.T, params ovirtclient.OptionalVMParameters)
 	}{
 		{
-			name: "asfd",
+			name: "verify CPU Topo",
 			setup: func(
 				basicSpec *v1beta1.OvirtMachineProviderSpec,
 				basicClient ovirtclient.Client) {
+				basicSpec.CPU.Cores = 1
+				basicSpec.CPU.Threads = 1
+				basicSpec.CPU.Sockets = 10
 			},
 			verify: func(t *testing.T, params ovirtclient.OptionalVMParameters) {
 				cpuTopo := params.CPU().Topo()
@@ -73,8 +76,8 @@ func TestMachineScope_BuildOptionalVMParameter(t *testing.T) {
 				if cpuTopo.Threads() != 1 {
 					t.Errorf("Expected CPU Threads to be %d, but got %d", 1, cpuTopo.Threads())
 				}
-				if cpuTopo.Sockets() != 8 {
-					t.Errorf("Expected CPU Sockets to be %d, but got %d", 1, cpuTopo.Sockets())
+				if cpuTopo.Sockets() != 10 {
+					t.Errorf("Expected CPU Sockets to be %d, but got %d", 10, cpuTopo.Sockets())
 				}
 			},
 		},

@@ -444,9 +444,11 @@ func (ms *machineScope) buildOptionalVMParameters(ignition string, templateID ov
 	} else {
 		// Add CPU
 		if ms.machineProviderSpec.CPU != nil {
-			optionalVMParams = optionalVMParams.MustWithCPUParameters(uint(ms.machineProviderSpec.CPU.Cores),
+			optionalVMParams = optionalVMParams.MustWithCPUParameters(
+				uint(ms.machineProviderSpec.CPU.Cores),
+				uint(ms.machineProviderSpec.CPU.Threads),
 				uint(ms.machineProviderSpec.CPU.Sockets),
-				uint(ms.machineProviderSpec.CPU.Threads))
+			)
 		}
 
 		if ms.machineProviderSpec.MemoryMB > 0 {
