@@ -77,134 +77,20 @@ func (ms *machineScope) create() error {
 	if err != nil {
 		return errors.Wrap(err, "error getting VM ignition")
 	}
-	optionalVMParams := ovirtC.CreateVMParams().MustWithInitializationParameters(string(ignition), ms.machine.Name)
-
-	if ms.machineProviderSpec.VMType != "" {
-		optionalVMParams = optionalVMParams.MustWithVMType(ovirtC.VMType(ms.machineProviderSpec.VMType))
-	}
-	if ms.machineProviderSpec.InstanceTypeId != "" {
-		optionalVMParams = optionalVMParams.MustWithInstanceTypeID(ovirtC.InstanceTypeID(ms.machineProviderSpec.InstanceTypeId))
-	} else {
-		// Add CPU
-		if ms.machineProviderSpec.CPU != nil {
-			optionalVMParams = optionalVMParams.MustWithCPUParameters(uint(ms.machineProviderSpec.CPU.Cores),
-				uint(ms.machineProviderSpec.CPU.Sockets),
-				uint(ms.machineProviderSpec.CPU.Threads))
-		}
-
-		if ms.machineProviderSpec.MemoryMB > 0 {
-			optionalVMParams = optionalVMParams.MustWithMemory(int64(bytesInMB) * int64(ms.machineProviderSpec.MemoryMB))
-		}
-
-		if ms.machineProviderSpec.GuaranteedMemoryMB > 0 {
-			optionalMemoryPolicy := ovirtC.NewMemoryPolicyParameters().MustWithGuaranteed(int64(bytesInMB) * int64(ms.machineProviderSpec.GuaranteedMemoryMB))
-			optionalVMParams = optionalVMParams.WithMemoryPolicy(optionalMemoryPolicy)
-		}
-	}
-
-	optionalPlacementPolicy := ovirtC.NewVMPlacementPolicyParameters()
-	isAutoPinning := ms.machineProviderSpec.AutoPinningPolicy != "" && ms.machineProviderSpec.AutoPinningPolicy != "none"
-	if isAutoPinning {
-		hosts, err := ms.ovirtClient.ListHosts(ovirtC.ContextStrategy(ms.Context))
-		if err != nil {
-			return errors.Wrap(err, "error Listing hosts")
-		}
-		hostIDs := make([]ovirtC.HostID, 0)
-		for _, host := range hosts {
-			if string(host.ClusterID()) == clusterId {
-				hostIDs = append(hostIDs, host.ID())
-			}
-		}
-		if len(hostIDs) > 0 {
-			optionalPlacementPolicy, err = optionalPlacementPolicy.WithHostIDs(hostIDs)
-			if err != nil {
-				return errors.Wrapf(err, "failed to create placement policy parameters with host IDs: %v", hostIDs)
-			}
-		}
-	}
-
-	if ms.machineProviderSpec.Hugepages > 0 {
-		optionalVMParams = optionalVMParams.MustWithHugePages(ovirtC.VMHugePages(ms.machineProviderSpec.Hugepages))
-	}
-
 	// CREATE VM from a template
 	templateName := ms.machineProviderSpec.TemplateName
-
-	temp, err := ms.ovirtClient.GetTemplateByName(templateName, ovirtC.ContextStrategy(ms.Context))
-
+	template, err := ms.ovirtClient.GetTemplateByName(templateName, ovirtC.ContextStrategy(ms.Context))
 	if err != nil {
 		return errors.Wrapf(err, "error finding template name %s.", templateName)
 	}
 
-	// Handle Sparse disks and Format
-	if ms.machineProviderSpec.Sparse != nil || ms.machineProviderSpec.Format != "" {
-		tempDiskAttachment, err := ms.ovirtClient.ListTemplateDiskAttachments(temp.ID(), ovirtC.ContextStrategy(ms.Context))
-		if err != nil {
-			return errors.Wrapf(err, "failed to fetch template %s disk attachments from oVirt Engine",
-				ms.machineProviderSpec.TemplateName)
-		}
-
-		diskParams := []ovirtC.OptionalVMDiskParameters{}
-		for _, diskAttachment := range tempDiskAttachment {
-			diskBuilder, _ := ovirtC.NewBuildableVMDiskParameters(diskAttachment.DiskID())
-			if ms.machineProviderSpec.Sparse != nil {
-				diskBuilder.MustWithSparse(*ms.machineProviderSpec.Sparse)
-			}
-
-			if ms.machineProviderSpec.Format != "" {
-				diskBuilder.MustWithFormat(ovirtC.ImageFormat(ms.machineProviderSpec.Format))
-			}
-
-			diskParams = append(diskParams, diskBuilder)
-		}
-		optionalVMParams = optionalVMParams.MustWithDisks(diskParams)
+	optionalVMParams, err := ms.buildOptionalVMParameters(string(ignition), template.ID())
+	if err != nil {
+		return errors.Wrapf(err, "error building parameters for VM creation")
 	}
-
-	// Handle Disk Clone
-	if ms.machineProviderSpec.Clone != nil {
-		optionalVMParams = optionalVMParams.MustWithClone(*ms.machineProviderSpec.Clone)
-	} else {
-		if ms.machineProviderSpec.VMType == string(ovirtC.VMTypeDesktop) {
-			optionalVMParams = optionalVMParams.MustWithClone(false)
-		} else {
-			optionalVMParams = optionalVMParams.MustWithClone(true)
-		}
-	}
-
-	if ms.machineProviderSpec.StorageDomainId != "" {
-		tempDiskAttachment, err := ms.ovirtClient.ListTemplateDiskAttachments(temp.ID(), ovirtC.ContextStrategy(ms.Context))
-		if err != nil {
-			return errors.Wrapf(err, "failed to fetch template %s disk attachments from oVirt Engine",
-				ms.machineProviderSpec.TemplateName)
-		}
-		optionalVMParams = optionalVMParams.MustWithDisks([]ovirtC.OptionalVMDiskParameters{
-			ovirtC.MustNewBuildableVMDiskParameters(tempDiskAttachment[0].DiskID()).MustWithStorageDomainID(ovirtC.StorageDomainID(ms.machineProviderSpec.StorageDomainId)),
-		})
-	}
-
-	vmAffinity := ovirtC.VMAffinityMigratable
-	// apply high_performance rules
-	// see: https://access.redhat.com/documentation/en-us/red_hat_virtualization/4.4/html-single/virtual_machine_management_guide/index?extIdCarryOver=true&sc_cid=701f2000001Css5AAC#Automatic_High_Performance_Configuration_Settings
-	if ms.machineProviderSpec.VMType == string(ovirtC.VMTypeHighPerformance) {
-		vmAffinity = ovirtC.VMAffinityUserMigratable
-		optionalVMParams.WithSoundcardEnabled(false)
-		optionalVMParams.WithSerialConsole(true)
-
-		cpuMode := ovirtC.NewVMCPUParams()
-		cpuMode = cpuMode.MustWithMode(ovirtC.CPUModeHostPassthrough)
-		optionalVMParams = optionalVMParams.MustWithCPU(cpuMode)
-
-		memPolicy := ovirtC.NewMemoryPolicyParameters()
-		memPolicy = memPolicy.MustWithBallooning(false)
-		optionalVMParams = optionalVMParams.WithMemoryPolicy(memPolicy)
-
-	}
-
-	optionalPlacementPolicy = optionalPlacementPolicy.MustWithAffinity(vmAffinity)
-	optionalVMParams = optionalVMParams.WithPlacementPolicy(optionalPlacementPolicy)
 
 	instance, err := ms.ovirtClient.CreateVM(ovirtC.ClusterID(clusterId),
-		temp.ID(),
+		template.ID(),
 		ms.machine.Name,
 		optionalVMParams, ovirtC.ContextStrategy(ms.Context))
 
@@ -294,7 +180,7 @@ func (ms *machineScope) create() error {
 		}
 	}
 
-	if isAutoPinning {
+	if ms.isAutoPinning() {
 		err = ms.ovirtClient.AutoOptimizeVMCPUPinningSettings(instance.ID(), true, ovirtC.ContextStrategy(ms.Context))
 		if err != nil {
 			return err
@@ -544,4 +430,130 @@ func (ms *machineScope) reconcileMachineAnnotations(status string, id string) {
 	}
 	ms.machine.ObjectMeta.Annotations[InstanceStatusAnnotationKey] = status
 	ms.machine.ObjectMeta.Annotations[utils.OvirtIDAnnotationKey] = id
+}
+
+func (ms *machineScope) buildOptionalVMParameters(ignition string, templateID ovirtC.TemplateID) (ovirtC.BuildableVMParameters, error) {
+	optionalVMParams := ovirtC.CreateVMParams()
+	optionalVMParams = optionalVMParams.MustWithInitializationParameters(ignition, ms.machine.Name)
+
+	if ms.machineProviderSpec.VMType != "" {
+		optionalVMParams = optionalVMParams.MustWithVMType(ovirtC.VMType(ms.machineProviderSpec.VMType))
+	}
+	if ms.machineProviderSpec.InstanceTypeId != "" {
+		optionalVMParams = optionalVMParams.MustWithInstanceTypeID(ovirtC.InstanceTypeID(ms.machineProviderSpec.InstanceTypeId))
+	} else {
+		// Add CPU
+		if ms.machineProviderSpec.CPU != nil {
+			optionalVMParams = optionalVMParams.MustWithCPUParameters(
+				uint(ms.machineProviderSpec.CPU.Cores),
+				uint(ms.machineProviderSpec.CPU.Threads),
+				uint(ms.machineProviderSpec.CPU.Sockets),
+			)
+		}
+
+		if ms.machineProviderSpec.MemoryMB > 0 {
+			optionalVMParams = optionalVMParams.MustWithMemory(int64(bytesInMB) * int64(ms.machineProviderSpec.MemoryMB))
+		}
+
+		if ms.machineProviderSpec.GuaranteedMemoryMB > 0 {
+			optionalMemoryPolicy := ovirtC.NewMemoryPolicyParameters().MustWithGuaranteed(int64(bytesInMB) * int64(ms.machineProviderSpec.GuaranteedMemoryMB))
+			optionalVMParams = optionalVMParams.WithMemoryPolicy(optionalMemoryPolicy)
+		}
+	}
+
+	optionalPlacementPolicy := ovirtC.NewVMPlacementPolicyParameters()
+	if ms.isAutoPinning() {
+		hosts, err := ms.ovirtClient.ListHosts(ovirtC.ContextStrategy(ms.Context))
+		if err != nil {
+			return nil, errors.Wrap(err, "error Listing hosts")
+		}
+		hostIDs := make([]ovirtC.HostID, 0)
+		for _, host := range hosts {
+			if string(host.ClusterID()) == ms.machineProviderSpec.ClusterId {
+				hostIDs = append(hostIDs, host.ID())
+			}
+		}
+		if len(hostIDs) > 0 {
+			optionalPlacementPolicy, err = optionalPlacementPolicy.WithHostIDs(hostIDs)
+			if err != nil {
+				return nil, errors.Wrapf(err, "failed to create placement policy parameters with host IDs: %v", hostIDs)
+			}
+		}
+	}
+
+	if ms.machineProviderSpec.Hugepages > 0 {
+		optionalVMParams = optionalVMParams.MustWithHugePages(ovirtC.VMHugePages(ms.machineProviderSpec.Hugepages))
+	}
+
+	// Handle Sparse disks and Format
+	if ms.machineProviderSpec.Sparse != nil || ms.machineProviderSpec.Format != "" {
+		tempDiskAttachment, err := ms.ovirtClient.ListTemplateDiskAttachments(templateID, ovirtC.ContextStrategy(ms.Context))
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to fetch template %s disk attachments from oVirt Engine",
+				ms.machineProviderSpec.TemplateName)
+		}
+
+		diskParams := []ovirtC.OptionalVMDiskParameters{}
+		for _, diskAttachment := range tempDiskAttachment {
+			diskBuilder, _ := ovirtC.NewBuildableVMDiskParameters(diskAttachment.DiskID())
+			if ms.machineProviderSpec.Sparse != nil {
+				diskBuilder.MustWithSparse(*ms.machineProviderSpec.Sparse)
+			}
+
+			if ms.machineProviderSpec.Format != "" {
+				diskBuilder.MustWithFormat(ovirtC.ImageFormat(ms.machineProviderSpec.Format))
+			}
+
+			diskParams = append(diskParams, diskBuilder)
+		}
+		optionalVMParams = optionalVMParams.MustWithDisks(diskParams)
+	}
+
+	// Handle Disk Clone
+	if ms.machineProviderSpec.Clone != nil {
+		optionalVMParams = optionalVMParams.MustWithClone(*ms.machineProviderSpec.Clone)
+	} else {
+		if ms.machineProviderSpec.VMType == string(ovirtC.VMTypeDesktop) {
+			optionalVMParams = optionalVMParams.MustWithClone(false)
+		} else {
+			optionalVMParams = optionalVMParams.MustWithClone(true)
+		}
+	}
+
+	if ms.machineProviderSpec.StorageDomainId != "" {
+		tempDiskAttachment, err := ms.ovirtClient.ListTemplateDiskAttachments(templateID, ovirtC.ContextStrategy(ms.Context))
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to fetch template %s disk attachments from oVirt Engine",
+				ms.machineProviderSpec.TemplateName)
+		}
+		optionalVMParams = optionalVMParams.MustWithDisks([]ovirtC.OptionalVMDiskParameters{
+			ovirtC.MustNewBuildableVMDiskParameters(tempDiskAttachment[0].DiskID()).MustWithStorageDomainID(ovirtC.StorageDomainID(ms.machineProviderSpec.StorageDomainId)),
+		})
+	}
+
+	vmAffinity := ovirtC.VMAffinityMigratable
+	// apply high_performance rules
+	// see: https://access.redhat.com/documentation/en-us/red_hat_virtualization/4.4/html-single/virtual_machine_management_guide/index?extIdCarryOver=true&sc_cid=701f2000001Css5AAC#Automatic_High_Performance_Configuration_Settings
+	if ms.machineProviderSpec.VMType == string(ovirtC.VMTypeHighPerformance) {
+		vmAffinity = ovirtC.VMAffinityUserMigratable
+		optionalVMParams.WithSoundcardEnabled(false)
+		optionalVMParams.WithSerialConsole(true)
+
+		cpuMode := ovirtC.NewVMCPUParams()
+		cpuMode = cpuMode.MustWithMode(ovirtC.CPUModeHostPassthrough)
+		optionalVMParams = optionalVMParams.MustWithCPU(cpuMode)
+
+		memPolicy := ovirtC.NewMemoryPolicyParameters()
+		memPolicy = memPolicy.MustWithBallooning(false)
+		optionalVMParams = optionalVMParams.WithMemoryPolicy(memPolicy)
+	}
+
+	optionalPlacementPolicy = optionalPlacementPolicy.MustWithAffinity(vmAffinity)
+	optionalVMParams = optionalVMParams.WithPlacementPolicy(optionalPlacementPolicy)
+
+	return optionalVMParams, nil
+}
+
+func (ms *machineScope) isAutoPinning() bool {
+	return ms.machineProviderSpec.AutoPinningPolicy != "" && ms.machineProviderSpec.AutoPinningPolicy != "none"
 }
