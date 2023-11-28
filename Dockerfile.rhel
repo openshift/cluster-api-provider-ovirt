@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.20-openshift-4.14 AS builder
+FROM registry.ci.openshift.org/ocp/builder:rhel-9-golang-1.20-openshift-4.15 AS builder
 
 ARG version
 ARG release
@@ -30,6 +30,6 @@ RUN git --version
 RUN make build
 
 
-FROM registry.ci.openshift.org/ocp/4.14:base
+FROM registry.ci.openshift.org/ocp/4.15:base-rhel9
 
 COPY --from=builder /go/cluster-api-provider-ovirt/bin/machine-controller-manager /
