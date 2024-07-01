@@ -1,6 +1,6 @@
 module github.com/openshift/cluster-api-provider-ovirt
 
-go 1.21
+go 1.22
 
 require (
 	github.com/go-logr/logr v1.2.3
